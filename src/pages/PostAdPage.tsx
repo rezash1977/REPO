@@ -8,21 +8,33 @@ import DetailsStep from '../components/post-ad/DetailsStep';
 import PostAdHeader from '../components/post-ad/PostAdHeader';
 import { AdFormData } from '@/types/ad';
 
-// تابع آپلود تصویر به فانکشن Edge Supabase
-async function uploadImageToSupabase(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-  // آدرس فانکشن Edge خود را جایگزین کنید
-  const response = await fetch('https://mosujjmlfwemaaanhrcm.supabase.co/storage/v1/s3', {
-    method: 'POST',
-    body: formData,
-  });
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1vc3Vqam1sZndlbWFhYW5ocmNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgxNzI4MTksImV4cCI6MjA2Mzc0ODgxOX0.vegUrqTj6ou1PKf6Jq6xehaFMuya1j9XKPRJbF2WZj4'; // قرار دادن کلید عمومی Supabase
+const SUPABASE_URL = 'https://mosujjmlfwemaaanhrcm.supabase.co';
+
+// تابع آپلود تصویر به Supabase Storage
+const uploadImageToSupabase = async (file: File): Promise<string> => {
+  const filePath = `uploads/${Date.now()}_${file.name}`;
+  const bucket = 'pic';
+
+  const response = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/${bucket}/${filePath}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': file.type,
+      },
+      body: file,
+    }
+  );
+
   if (!response.ok) {
-    throw new Error('خطا در آپلود تصویر');
+    const errorText = await response.text();
+    throw new Error(`خطا در آپلود تصویر: ${errorText}`);
   }
-  const result = await response.json();
-  return result.publicUrl;
-}
+
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${filePath}`;
+};
 
 const PostAdPage: React.FC = () => {
   const navigate = useNavigate();
@@ -43,7 +55,6 @@ const PostAdPage: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Redirect to login if not authenticated
   React.useEffect(() => {
     if (!loading && !user) {
       navigate('/login');
@@ -58,22 +69,15 @@ const PostAdPage: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return null; // Will redirect to login
-  }
-  
+  if (!user) return null;
+
   const goToNextStep = () => {
-    if (step === 1 && formData.title) {
-      setStep(2);
-    } else if (step === 2 && formData.category) {
-      setStep(3);
-    }
+    if (step === 1 && formData.title) setStep(2);
+    else if (step === 2 && formData.category) setStep(3);
   };
 
   const goToPrevStep = () => {
-    if (step > 1) {
-      setStep(step - 1);
-    }
+    if (step > 1) setStep(step - 1);
   };
 
   const updateFormData = (data: Partial<AdFormData>) => {
@@ -81,7 +85,6 @@ const PostAdPage: React.FC = () => {
   };
 
   const onAdCreated = () => {
-    // Navigate back to home page after successful ad creation
     navigate('/');
   };
 
@@ -139,7 +142,7 @@ const PostAdPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <PostAdHeader step={step} />
-      
+
       <main className="container mx-auto px-4 py-6 pb-20">
         {step === 1 && (
           <TitleStep 
@@ -148,7 +151,7 @@ const PostAdPage: React.FC = () => {
             goToNextStep={goToNextStep} 
           />
         )}
-        
+
         {step === 2 && (
           <CategoryStep 
             category={formData.category || null} 
@@ -157,7 +160,7 @@ const PostAdPage: React.FC = () => {
             goToPrevStep={goToPrevStep}
           />
         )}
-        
+
         {step === 3 && (
           <>
             <DetailsStep 
@@ -189,10 +192,11 @@ const PostAdPage: React.FC = () => {
           </>
         )}
       </main>
-      
+
       <Navbar />
     </div>
   );
 };
 
 export default PostAdPage;
+

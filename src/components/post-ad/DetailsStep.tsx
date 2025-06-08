@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Mic } from 'lucide-react';
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -28,83 +28,20 @@ const DetailsStep: React.FC<DetailsStepProps> = ({
   const createAdMutation = useCreateAd();
   const { data: categories } = useCategories();
   const recognitionDescRef = useRef<any>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleImageClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    // Check if maximum number of images is reached
-    if (images.length + files.length > 6) {
-      toast({
-        title: "تعداد تصاویر بیش از حد مجاز",
-        description: "حداکثر ۶ تصویر می‌توانید انتخاب کنید",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const newImages: AdImage[] = [];
-    
-    Array.from(files).forEach(file => {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        toast({
-          title: "نوع فایل نامعتبر",
-          description: "لطفاً فقط تصویر انتخاب کنید",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast({
-          title: "حجم فایل زیاد است",
-          description: "حداکثر حجم هر تصویر ۵ مگابایت است",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const id = `img-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-      const preview = URL.createObjectURL(file);
-      
-      newImages.push({ id, file, preview });
+  // Debug function to log webhook response
+  const debugWebhookResponse = (response: any, contentType: string | null) => {
+    console.log('Webhook Response Debug:', {
+      status: response.status,
+      statusText: response.statusText,
+      contentType: contentType,
+      headers: Object.fromEntries(response.headers.entries())
     });
-
-    const updatedImages = [...images, ...newImages];
-    setImages(updatedImages);
-    updateFormData({ images: updatedImages });
-    
-    // Reset the input to allow selecting the same file again
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
-  const removeImage = (id: string) => {
-    // Revoke the object URL to avoid memory leaks
-    const imageToRemove = images.find(img => img.id === id);
-    if (imageToRemove) {
-      URL.revokeObjectURL(imageToRemove.preview);
-    }
-    
-    const updatedImages = images.filter(image => image.id !== id);
-    setImages(updatedImages);
-    updateFormData({ images: updatedImages });
-  };
-
-  // تابع آپلود تصویر به Supabase و دریافت publicUrl با استفاده از supabase-js
+  // Upload image to Supabase
   async function uploadImageToSupabase(file: File): Promise<string> {
-    if (!(file instanceof File)) {
-      throw new Error('فایل معتبر نیست');
-    }
     const fileName = `${Date.now()}_${file.name}`;
     const { data, error } = await supabase.storage
       .from('pic')
@@ -120,127 +57,212 @@ const DetailsStep: React.FC<DetailsStepProps> = ({
     return publicUrlData.publicUrl;
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validate form
-    if (images.length === 0) {
-      toast({
-        title: "تصویر انتخاب نشده",
-        description: "لطفاً حداقل یک تصویر انتخاب کنید",
-      });
+  // Generate description via n8n webhook
+  const handleGenerateDescription = async () => {
+    if (!formData.title) {
+      toast({ title: 'عنوان آگهی الزامی است', variant: 'destructive' });
       return;
     }
-
-    // تبدیل ارقام فارسی به انگلیسی
-    const toEnglishDigits = (str: string) =>
-      str.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
-
-    if (!formData.price?.trim() || isNaN(Number(toEnglishDigits(formData.price)))) {
-      toast({
-        title: "قیمت وارد نشده یا نامعتبر است",
-        description: "لطفاً قیمت را به صورت عددی وارد کنید",
-      });
-      return;
-    }
-
-    if (!formData.description?.trim()) {
-      toast({
-        title: "توضیحات وارد نشده",
-        description: "لطفاً توضیحات آگهی را وارد کنید",
-      });
-      return;
-    }
-
-    if (!formData.location?.trim()) {
-      toast({
-        title: "موقعیت مکانی وارد نشده",
-        description: "لطفاً موقعیت مکانی را وارد کنید",
-      });
-      return;
-    }
-
-    // Find category ID
-    const selectedCategory = categories?.find(cat => cat.slug === formData.category);
-    if (!selectedCategory) {
-      toast({
-        title: "دسته‌بندی نامعتبر",
-        description: "لطفاً دسته‌بندی معتبری انتخاب کنید",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // آپلود همه تصاویر و دریافت publicUrlها
-    const imageUrls: string[] = [];
-    for (const img of images) {
-      if (img.file) {
-        const url = await uploadImageToSupabase(img.file);
-        imageUrls.push(url);
-      }
-    }
-
-    // Log price before sending
-    const englishPrice = toEnglishDigits(formData.price);
-    console.log('price to be sent:', englishPrice, typeof englishPrice);
-
+    setIsGenerating(true);
     try {
-      await createAdMutation.mutateAsync({
-        title: formData.title!,
-        category_id: selectedCategory.id,
-        description: formData.description,
-        price: Number(englishPrice),
-        location: formData.location,
-        phone: formData.phone,
-        images: imageUrls // فقط publicUrlها ذخیره شود
+      console.log('Sending request to webhook with title:', formData.title);
+      
+      const response = await fetch('https://omidpar.app.n8n.cloud/webhook/d5b07a3e-4b39-4883-bf7c-7bddfb4845dd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: formData.title })
       });
-
-      onAdCreated();
-    } catch (error) {
-      console.error('Failed to create ad:', error);
+      
+      const contentType = response.headers.get('content-type');
+      debugWebhookResponse(response, contentType);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
+      }
+      
+      // Try to parse as JSON first
+      let descriptionText = '';
+      
+      try {
+        if (contentType && contentType.includes('application/json')) {
+          const jsonData = await response.json();
+          console.log('Parsed JSON response:', jsonData);
+          
+          // Handle different possible JSON response structures
+          if (typeof jsonData === 'string') {
+            descriptionText = jsonData;
+          } else if (jsonData.description) {
+            descriptionText = jsonData.description;
+          } else if (jsonData.text) {
+            descriptionText = jsonData.text;
+          } else if (jsonData.result) {
+            descriptionText = jsonData.result;
+          } else if (jsonData.data) {
+            descriptionText = jsonData.data;
+          } else if (jsonData.message) {
+            descriptionText = jsonData.message;
+          } else if (Array.isArray(jsonData) && jsonData.length > 0) {
+            // If it's an array, take the first element
+            descriptionText = typeof jsonData[0] === 'string' ? jsonData[0] : JSON.stringify(jsonData[0]);
+          } else {
+            // If it's an object but doesn't have expected fields, stringify it
+            descriptionText = JSON.stringify(jsonData);
+          }
+        } else {
+          // If not JSON, treat as plain text
+          const textResponse = await response.text();
+          console.log('Text response:', textResponse);
+          descriptionText = textResponse;
+        }
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        // Fallback to text if JSON parsing fails
+        const textResponse = await response.text();
+        console.log('Fallback text response:', textResponse);
+        descriptionText = textResponse;
+      }
+      
+      // Clean up the description text
+      descriptionText = descriptionText.trim();
+      
+      if (!descriptionText) {
+        throw new Error('پاسخ خالی از سرور دریافت شد');
+      }
+      
+      console.log('Final description text:', descriptionText);
+      
+      updateFormData({ description: descriptionText });
+      toast({ 
+        title: 'توضیحات تولید شد', 
+        description: 'توضیحات AI با موفقیت در کادر قرار گرفت.' 
+      });
+      
+    } catch (error: any) {
+      console.error('AI generation error:', error);
+      let errorMessage = 'خطا در تولید توضیحات AI';
+      
+      if (error.message.includes('HTTP error')) {
+        errorMessage = `خطا در ارتباط با سرور: ${error.message}`;
+      } else if (error.message.includes('Failed to fetch')) {
+        errorMessage = 'خطا در اتصال به اینترنت';
+      } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        errorMessage = 'خطا در اتصال به سرور';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast({ 
+        title: 'خطا', 
+        description: errorMessage, 
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsGenerating(false);
     }
+  };
+
+  const handleImageClick = () => fileInputRef.current?.click();
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    if (images.length + files.length > 6) {
+      toast({ title: 'بیش از ۶ تصویر مجاز نیست', variant: 'destructive' });
+      return;
+    }
+    const newImages: AdImage[] = [];
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) {
+        toast({ title: 'نوع فایل نامعتبر', variant: 'destructive' });
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ title: 'حداکثر ۵ مگابایت', variant: 'destructive' });
+        return;
+      }
+      const id = `img-${Date.now()}-${Math.random().toString(36).substring(2,9)}`;
+      const preview = URL.createObjectURL(file);
+      newImages.push({ id, file, preview });
+    });
+    const updated = [...images, ...newImages];
+    setImages(updated);
+    updateFormData({ images: updated });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeImage = (id: string) => {
+    const toRemove = images.find(i => i.id === id);
+    if (toRemove) URL.revokeObjectURL(toRemove.preview);
+    const updated = images.filter(i => i.id !== id);
+    setImages(updated);
+    updateFormData({ images: updated });
   };
 
   const handleStartVoiceDesc = () => {
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     if (!SpeechRecognition) {
-      toast({
-        title: "پشتیبانی نشد",
-        description: "مرورگر شما از تبدیل گفتار به متن پشتیبانی نمی‌کند.",
-        variant: "destructive",
-      });
+      toast({ title: 'پشتیبانی نمی‌شود', variant: 'destructive' });
       return;
     }
-
     if (!recognitionDescRef.current) {
       recognitionDescRef.current = new SpeechRecognition();
-      recognitionDescRef.current.lang = "fa-IR";
+      recognitionDescRef.current.lang = 'fa-IR';
       recognitionDescRef.current.interimResults = false;
-      recognitionDescRef.current.maxAlternatives = 1;
     }
-
-    recognitionDescRef.current.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
+    recognitionDescRef.current.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
       updateFormData({ description: (formData.description || '') + transcript });
-      toast({
-        title: "متن دریافت شد",
-        description: transcript,
-      });
+      toast({ title: 'متن دریافت شد', description: transcript });
     };
-
-    recognitionDescRef.current.onerror = (event: any) => {
-      toast({
-        title: "خطا در تشخیص صدا",
-        description: event.error,
-        variant: "destructive",
-      });
+    recognitionDescRef.current.onerror = (e: any) => {
+      toast({ title: 'خطا در تشخیص صدا', description: e.error, variant: 'destructive' });
     };
-
     recognitionDescRef.current.start();
-    toast({
-      title: "در حال گوش دادن...",
-      description: "لطفاً توضیحات آگهی را بیان کنید.",
-    });
+    toast({ title: 'گوش دادن...' });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (images.length === 0) {
+      toast({ title: 'تصویر انتخاب نشده', variant: 'destructive' });
+      return;
+    }
+    const toEnglish = (str: string) => str.replace(/[۰-۹]/g, d => String('۰۱۲۳৪۵۶۷۸۹'.indexOf(d)));
+    if (!formData.price?.trim() || isNaN(Number(toEnglish(formData.price)))) {
+      toast({ title: 'قیمت نامعتبر', variant: 'destructive' });
+      return;
+    }
+    if (!formData.description?.trim()) {
+      toast({ title: 'توضیحات وارد نشده', variant: 'destructive' });
+      return;
+    }
+    if (!formData.location?.trim()) {
+      toast({ title: 'موقعیت وارد نشده', variant: 'destructive' });
+      return;
+    }
+    const category = categories?.find(c => c.slug === formData.category);
+    if (!category) {
+      toast({ title: 'دسته‌بندی نامعتبر', variant: 'destructive' });
+      return;
+    }
+    const imageUrls: string[] = [];
+    for (const img of images) {
+      if (img.file) imageUrls.push(await uploadImageToSupabase(img.file));
+    }
+    try {
+      await createAdMutation.mutateAsync({
+        title: formData.title!,
+        category_id: category.id,
+        description: formData.description,
+        price: Number(toEnglish(formData.price)),
+        location: formData.location,
+        phone: formData.phone,
+        images: imageUrls
+      });
+      onAdCreated();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (
@@ -251,141 +273,62 @@ const DetailsStep: React.FC<DetailsStepProps> = ({
         </button>
         <h2 className="font-bold">آپلود تصاویر</h2>
       </div>
-      
       <div className="mb-6">
         <div className="grid grid-cols-3 gap-3 mb-3">
-          <button
-            type="button"
-            onClick={handleImageClick}
-            className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:bg-gray-50 transition-colors"
-          >
-            <Upload className="text-gray-400" size={24} />
+          <button type="button" onClick={handleImageClick} className="aspect-square border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center hover:bg-gray-50">
+            <Upload size={24} className="text-gray-400" />
             <span className="text-xs text-gray-500">افزودن</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageChange}
-              className="hidden"
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageChange} className="hidden" />
           </button>
-          
-          {images.map((image) => (
-            <div key={image.id} className="aspect-square relative bg-gray-100 rounded-lg overflow-hidden group">
-              <img 
-                src={image.preview} 
-                alt="تصویر آگهی" 
-                className="w-full h-full object-cover"
-              />
-              <button
-                type="button"
-                onClick={() => removeImage(image.id)}
-                className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-              >
+          {images.map(img => (
+            <div key={img.id} className="aspect-square relative rounded-lg overflow-hidden group bg-gray-100">
+              <img src={img.preview} alt="ad" className="w-full h-full object-cover" />
+              <button type="button" onClick={() => removeImage(img.id)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-red-500 text-white p-1 rounded-full">
                 <Trash size={14} />
               </button>
             </div>
           ))}
-          
-          {/* Placeholder empty boxes for visual balance */}
-          {Array.from({ length: Math.max(0, 6 - images.length - 1) }).map((_, index) => (
-            <div key={`placeholder-${index}`} className="aspect-square bg-gray-100 rounded-lg"></div>
+          {Array.from({ length: Math.max(0, 6 - images.length - 1) }).map((_, i) => (
+            <div key={i} className="aspect-square rounded-lg bg-gray-100"></div>
           ))}
         </div>
-        
         <div className="text-xs text-gray-500 flex items-center">
           <div className="rounded-full bg-blue-100 p-1 ml-2">
-            <Image className="text-primary" size={14} />
+            <Image size={14} className="text-primary" />
           </div>
-          <span>تصاویر با کیفیت بالاتر شانس فروش را افزایش می‌دهند</span>
+          <span>تصاویر باکیفیت شانس فروش را افزایش می‌دهند</span>
         </div>
       </div>
-      
       <h2 className="font-bold mb-2">مشخصات آگهی</h2>
       <div className="space-y-4 mb-6">
-        <div className="relative">
+        <div>
           <label className="block text-sm mb-1">عنوان آگهی</label>
-          <Input
-            type="text"
-            value={formData.title || ''}
-            onChange={(e) => updateFormData({ title: e.target.value })}
-            placeholder="عنوان آگهی"
-            className="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
+          <Input value={formData.title || ''} onChange={e => updateFormData({ title: e.target.value })} placeholder="عنوان آگهی" className="w-full" />
         </div>
-        
         <div>
           <label className="block text-sm mb-1">قیمت (تومان)</label>
-          <Input
-            type="text"
-            value={formData.price || ''}
-            onChange={(e) => updateFormData({ price: e.target.value })}
-            placeholder="مثال: ۸٬۵۰۰٬۰۰۰٬۰۰۰"
-            className="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
+          <Input value={formData.price || ''} onChange={e => updateFormData({ price: e.target.value })} placeholder="مثال: ۸,۵۰۰,۰۰۰" className="w-full" />
         </div>
-        
         <div>
-          <label className="block text-sm mb-1">توضیحات</label>
+          <label className="block text-sm mb-1">توضیحات آگهی</label>
           <div className="relative">
-            <Textarea
-              value={formData.description || ''}
-              onChange={(e) => updateFormData({ description: e.target.value })}
-              placeholder="جزئیات آگهی را وارد کنید..."
-              rows={4}
-              className="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
-            <button
-              type="button"
-              onClick={handleStartVoiceDesc}
-              className="absolute left-2 top-2 bg-gray-100 p-2 rounded-full hover:bg-primary hover:text-white transition"
-              title="ورود توضیحات با صدا"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 14 0Z"/></svg>
-            </button>
+            <Textarea value={formData.description || ''} onChange={e => updateFormData({ description: e.target.value })} rows={4} placeholder="جزئیات آگهی را وارد کنید..." className="w-full" />
+            <Button type="button" onClick={handleStartVoiceDesc} className="absolute left-2 top-2" title="ورود صوتی">
+              <Mic size={16} />
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={handleGenerateDescription} disabled={!formData.title || isGenerating} className="absolute left-2 bottom-2">
+              {isGenerating ? 'در حال تولید...' : 'تولید توضیحات با AI'}
+            </Button>
           </div>
         </div>
-        
         <div>
           <label className="block text-sm mb-1">موقعیت مکانی</label>
-          <Input
-            type="text"
-            value={formData.location || ''}
-            onChange={(e) => updateFormData({ location: e.target.value })}
-            placeholder="مثال: تهران، ونک"
-            className="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">شماره تماس (اختیاری)</label>
-          <Input
-            type="text"
-            value={formData.phone || ''}
-            onChange={(e) => updateFormData({ phone: e.target.value })}
-            placeholder="مثال: ۰۹۱۲۳۴۵۶۷۸۹"
-            className="w-full p-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-          />
+          <Input value={formData.location || ''} onChange={e => updateFormData({ location: e.target.value })} placeholder="مثال: تهران، سعادت‌آباد" className="w-full" />
         </div>
       </div>
-      
-      <Button
-        type="submit"
-        disabled={createAdMutation.isPending}
-        className="w-full p-3 rounded-lg font-medium bg-primary text-white mb-3"
-      >
+      <Button type="submit" className="w-full p-3 bg-primary text-white rounded-lg font-medium">
         {createAdMutation.isPending ? 'در حال ثبت...' : 'ثبت آگهی'}
       </Button>
-      
-      <div className="text-xs text-gray-500 flex items-center justify-center">
-        <div className="rounded-full bg-blue-100 p-1 ml-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
-            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 16a1 1 0 1 1 1-1 1 1 0 0 1-1 1zm1-5a1 1 0 0 1-2 0V8a1 1 0 0 1 2 0z"></path>
-          </svg>
-        </div>
-        <span>با ثبت آگهی، با قوانین چی کو موافقت می‌کنید</span>
-      </div>
     </form>
   );
 };
