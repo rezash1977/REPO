@@ -67,7 +67,7 @@ const DetailsStep: React.FC<DetailsStepProps> = ({
     try {
       console.log('Sending request to webhook with title:', formData.title);
       
-      const response = await fetch('https://milanimistra.app.n8n.cloud/webhook/d5b07a3e-4b39-4883-bf7c-7bddfb4845dd', {
+      const response = await fetch('https://windywindy.app.n8n.cloud/webhook/d5b07a3e-4b39-4883-bf7c-7bddfb4845dd', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: formData.title })
