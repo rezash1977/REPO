@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { triggerUnreadCountUpdate } from '@/hooks/useUnreadMessagesCount';
+import { Link } from 'react-router-dom';
 
 interface ChatModuleProps {
   user: any;
@@ -283,7 +284,13 @@ const ChatModule: React.FC<ChatModuleProps> = ({ user, toast, initialAdId, initi
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <div className="font-bold text-xs text-violet-700">{conv.adTitle}</div>
+                  <Link
+                    to={`/ad/${conv.ad_id}`}
+                    className="font-bold text-xs text-violet-700 underline hover:text-violet-900 transition-colors"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {conv.adTitle}
+                  </Link>
                   <div className="font-medium text-sm text-gray-700">{conv.otherUserName}</div>
                   <div className="text-xs text-gray-500">آخرین پیام: {conv.lastMessage}</div>
                   <div className="ml-auto text-xs text-gray-400">{new Date(conv.lastMessageDate).toLocaleDateString('fa-IR')}</div>

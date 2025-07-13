@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { Phone, MessageSquare } from 'lucide-react';
+import { Phone, MessageSquare, Heart } from 'lucide-react';
 import Navbar from '../components/layout/Navbar';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import ChatModule from '../components/chat/ChatModule';
 import { useToast } from '@/components/ui/use-toast';
+import { useFavorites } from '@/hooks/useFavorites';
 
 // پیام به فروشنده - ساختار جدول پیشنهادی در Supabase:
 //
@@ -51,6 +52,7 @@ const AdDetailPage: React.FC = () => {
   const [messageError, setMessageError] = React.useState('');
   const { toast } = useToast();
   const [showChat, setShowChat] = useState(false);
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   React.useEffect(() => {
     const fetchAd = async () => {
@@ -218,6 +220,36 @@ const AdDetailPage: React.FC = () => {
             >
               <MessageSquare className="w-5 h-5 ml-1" />
               <span>پیام</span>
+            </button>
+            <button
+              className={`flex-1 py-3 rounded-lg flex items-center justify-center mr-2 ${
+                isFavorite(ad.id.toString())
+                  ? 'bg-red-100 text-red-600'
+                  : 'bg-gray-100 text-gray-700'
+              }`}
+              onClick={async () => {
+                if (!user) {
+                  navigate('/login');
+                  return;
+                }
+                const success = await toggleFavorite(ad.id.toString());
+                if (success) {
+                  toast({
+                    title: isFavorite(ad.id.toString()) 
+                      ? 'آگهی از نشان شده‌ها حذف شد' 
+                      : 'آگهی به نشان شده‌ها اضافه شد',
+                    variant: 'default'
+                  });
+                } else {
+                  toast({
+                    title: 'خطا در تغییر وضعیت نشان کردن',
+                    variant: 'destructive'
+                  });
+                }
+              }}
+            >
+              <Heart className={`w-5 h-5 ml-1 ${isFavorite(ad.id.toString()) ? 'fill-current' : ''}`} />
+              <span>نشان</span>
             </button>
           </div>
         </div>

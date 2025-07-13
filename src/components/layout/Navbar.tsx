@@ -1,17 +1,19 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Plus, UserPlus, Settings, LogOut } from 'lucide-react';
+import { User, Plus, UserPlus, Settings, LogOut, Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
+import { useFavorites } from '@/hooks/useFavorites';
 
 const Navbar: React.FC = () => {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
   const [isAdmin, setIsAdmin] = useState(false);
   const unreadCount = useUnreadMessagesCount(user?.id);
+  const { favorites } = useFavorites();
 
   // Check if user is admin
   useEffect(() => {
@@ -86,6 +88,16 @@ const Navbar: React.FC = () => {
                   </span>
                 )}
                 <span className="text-xs mt-1">حساب من</span>
+              </Link>
+              
+              <Link to="/favorites" className="flex flex-col items-center relative text-gray-600 hover:text-violet-600">
+                <Heart size={24} className="text-red-500" />
+                {favorites.length > 0 && (
+                  <span className="absolute -top-1 -right-2 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">
+                    {favorites.length > 99 ? '99+' : favorites.length}
+                  </span>
+                )}
+                <span className="text-xs mt-1">نشان شده</span>
               </Link>
               
               <button 
