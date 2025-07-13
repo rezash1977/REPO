@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
@@ -6,6 +5,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { useAds } from '@/hooks/useAds';
 import Header from '../components/layout/Header';
 import Navbar from '../components/layout/Navbar';
+import { formatPrice } from '@/lib/utils';
 
 interface AdProps {
   id: string;
@@ -14,14 +14,10 @@ interface AdProps {
   location: string | null;
   images: string[];
   created_at: string;
+  description: string | null;
 }
 
-const AdItem: React.FC<AdProps> = ({ id, title, price, location, images, created_at }) => {
-  const formatPrice = (price: number | null) => {
-    if (!price) return 'توافقی';
-    return `${price.toLocaleString('fa-IR')} تومان`;
-  };
-
+const AdItem: React.FC<AdProps> = ({ id, title, price, location, images, created_at, description }) => {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -38,17 +34,24 @@ const AdItem: React.FC<AdProps> = ({ id, title, price, location, images, created
     : 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=300&h=200&fit=crop';
 
   return (
-    <Link to={`/ad/${id}`} className="flex border-b border-gray-100 py-3 animate-fade-in">
-      <div className="w-24 h-24 rounded-md overflow-hidden">
+    <Link to={`/ad/${id}`} className="flex border-b border-gray-100 py-2 animate-fade-in items-center">
+      <div className="w-16 h-16 rounded-md overflow-hidden flex-shrink-0">
         <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
       </div>
-      <div className="flex-1 pr-3">
-        <h3 className="font-medium text-sm mb-1">{title}</h3>
-        <p className="text-primary font-bold text-sm">{formatPrice(price)}</p>
-        <div className="flex justify-between mt-2">
-          <span className="text-gray-500 text-xs">{location || 'موقعیت نامشخص'}</span>
-          <span className="text-gray-400 text-xs">{formatDate(created_at)}</span>
+      <div className="flex-1 pr-2 min-w-0">
+        <h3 className="font-medium text-xs mb-0.5 truncate">{title}</h3>
+        {price && (
+          <p className="text-green-600 font-bold text-xs mb-0.5">{formatPrice(price)} تومان</p>
+        )}
+        <div className="flex justify-between items-center mb-1">
+          <span className="text-gray-500 text-[10px]">{location || 'موقعیت نامشخص'}</span>
+          <span className="text-gray-400 text-[10px]">{formatDate(created_at)}</span>
         </div>
+        {description && (
+          <p className="text-[10px] text-gray-600 line-clamp-2 leading-relaxed">
+            {description}
+          </p>
+        )}
       </div>
     </Link>
   );
@@ -157,7 +160,7 @@ const CategoryPage: React.FC = () => {
               <p className="text-red-500">خطا در بارگذاری آگهی‌ها</p>
             </div>
           ) : ads && ads.length > 0 ? (
-            <div className="divide-y divide-gray-100">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {ads.map((ad) => (
                 <AdItem
                   key={ad.id}
@@ -167,6 +170,7 @@ const CategoryPage: React.FC = () => {
                   location={ad.location}
                   images={ad.images || []}
                   created_at={ad.created_at}
+                  description={ad.description}
                 />
               ))}
             </div>

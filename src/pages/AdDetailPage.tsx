@@ -1,8 +1,26 @@
-import React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Phone, MessageSquare } from 'lucide-react';
 import Navbar from '../components/layout/Navbar';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import ChatModule from '../components/chat/ChatModule';
+import { useToast } from '@/components/ui/use-toast';
+
+// پیام به فروشنده - ساختار جدول پیشنهادی در Supabase:
+//
+// create table public.messages (
+//   id uuid primary key default uuid_generate_v4(),
+//   ad_id uuid not null,
+//   sender_id uuid not null,
+//   receiver_id uuid not null,
+//   content text not null,
+//   created_at timestamp with time zone default now()
+// );
+//
+// اگر ad_id از نوع int است، نوع آن را به int تغییر دهید.
+//
+// ---
 
 interface AdDetail {
   id: number;
@@ -15,14 +33,24 @@ interface AdDetail {
   sellerName: string;
   sellerJoined: string;
   features: Record<string, string>;
+  sellerId?: string; // اضافه شد
 }
 
 const AdDetailPage: React.FC = () => {
   const { adId } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [ad, setAd] = React.useState<AdDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = React.useState(0);
+  const [showMessageModal, setShowMessageModal] = React.useState(false);
+  const [messageText, setMessageText] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [messageSuccess, setMessageSuccess] = React.useState(false);
+  const [messageError, setMessageError] = React.useState('');
+  const { toast } = useToast();
+  const [showChat, setShowChat] = useState(false);
 
   React.useEffect(() => {
     const fetchAd = async () => {
@@ -44,7 +72,6 @@ const AdDetailPage: React.FC = () => {
         setLoading(false);
         return;
       }
-      // گرفتن اطلاعات فروشنده (اختیاری)
       let sellerName = '---';
       let sellerJoined = '';
       if (data.user_id) {
@@ -58,11 +85,9 @@ const AdDetailPage: React.FC = () => {
           sellerJoined = userData.created_at ? `عضویت از ${new Date(userData.created_at).toLocaleDateString('fa-IR')}` : '';
         }
       }
-      // ویژگی‌ها (features) را می‌توانید بر اساس نیاز خود بسازید
       const features: Record<string, string> = {};
-      // نمونه: اگر فیلدهای بیشتری دارید، اینجا اضافه کنید
       setAd({
-        id: Number(data.id),
+        id: data.id, // uuid string, not number!
         title: data.title,
         description: data.description,
         price: data.price ? `${Number(data.price).toLocaleString('fa-IR')} تومان` : 'توافقی',
@@ -72,6 +97,7 @@ const AdDetailPage: React.FC = () => {
         sellerName,
         sellerJoined,
         features,
+        sellerId: data.user_id, // اضافه شد
       });
       setLoading(false);
     };
@@ -112,8 +138,28 @@ const AdDetailPage: React.FC = () => {
         </div>
       </div>
       <main className="container mx-auto px-4 pb-24">
-        {/* Image Gallery */}
-        {ad.images.length > 0 && (
+        {/* Ad Thumbnail and Info Row */}
+        <div className="bg-white rounded-lg shadow-sm p-4 mb-4 flex items-center gap-4">
+          {ad.images.length > 0 && (
+            <div className="w-24 h-24 rounded-lg overflow-hidden flex-shrink-0">
+              <img
+                src={ad.images[0]}
+                alt={ad.title}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl font-bold mb-1 truncate">{ad.title}</h1>
+            <p className="text-primary text-lg font-bold mb-1">{ad.price}</p>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-gray-500 text-sm">{ad.location}</span>
+              <span className="text-gray-400 text-xs">{ad.date}</span>
+            </div>
+          </div>
+        </div>
+        {/* Image Gallery (if more images) */}
+        {ad.images.length > 1 && (
           <div className="relative bg-black mb-4 rounded-lg overflow-hidden">
             <div className="aspect-w-4 aspect-h-3">
               <img 
@@ -122,45 +168,19 @@ const AdDetailPage: React.FC = () => {
                 className="w-full h-64 object-cover"
               />
             </div>
-            {ad.images.length > 1 && (
-              <div className="absolute bottom-2 left-0 right-0 flex justify-center">
-                <div className="bg-black bg-opacity-50 rounded-full px-3 py-1 flex space-x-1">
-                  {ad.images.map((_, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setActiveImageIndex(index)}
-                      className={`w-2 h-2 rounded-full ${index === activeImageIndex ? 'bg-white' : 'bg-gray-400'}`}
-                    ></button>
-                  ))}
-                </div>
+            <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+              <div className="bg-black bg-opacity-50 rounded-full px-3 py-1 flex space-x-1">
+                {ad.images.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setActiveImageIndex(index)}
+                    className={`w-2 h-2 rounded-full ${index === activeImageIndex ? 'bg-white' : 'bg-gray-400'}`}
+                  ></button>
+                ))}
               </div>
-            )}
-          </div>
-        )}
-        {/* Ad Info */}
-        <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
-          <h1 className="text-xl font-bold mb-2">{ad.title}</h1>
-          <p className="text-primary text-xl font-bold mb-2">{ad.price}</p>
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-gray-500 text-sm">{ad.location}</span>
-            <span className="text-gray-400 text-xs">{ad.date}</span>
-          </div>
-          <div className="border-t border-gray-100 pt-4">
-            <h2 className="font-bold mb-2">مشخصات</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {Object.entries(ad.features).length > 0 ? (
-                Object.entries(ad.features).map(([key, value]) => (
-                  <div key={key} className="flex justify-between">
-                    <span className="text-gray-500 text-sm">{key}:</span>
-                    <span className="text-sm">{value}</span>
-                  </div>
-                ))
-              ) : (
-                <span className="text-gray-400 text-xs">--- </span>
-              )}
             </div>
           </div>
-        </div>
+        )}
         {/* Ad Description */}
         <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
           <h2 className="font-bold mb-2">توضیحات</h2>
@@ -186,12 +206,83 @@ const AdDetailPage: React.FC = () => {
               <Phone className="w-5 h-5 ml-1" />
               <span>تماس</span>
             </button>
-            <button className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg flex items-center justify-center">
+            <button
+              className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg flex items-center justify-center"
+              onClick={() => {
+                if (!user) {
+                  navigate('/login');
+                } else {
+                  setShowMessageModal(true);
+                }
+              }}
+            >
               <MessageSquare className="w-5 h-5 ml-1" />
               <span>پیام</span>
             </button>
           </div>
         </div>
+        {/* Message Modal (active) */}
+        {showMessageModal && user && ad && ad.sellerId && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-sm shadow-lg">
+              <h3 className="font-bold mb-2">ارسال پیام به فروشنده</h3>
+              <textarea
+                className="w-full border rounded p-2 mb-4"
+                rows={4}
+                placeholder="متن پیام شما..."
+                value={messageText}
+                onChange={e => setMessageText(e.target.value)}
+                disabled={sending || messageSuccess}
+              ></textarea>
+              {messageError && <div className="text-red-500 text-xs mb-2">{messageError}</div>}
+              {messageSuccess && <div className="text-green-600 text-xs mb-2">پیام با موفقیت ارسال شد.</div>}
+              <div className="flex justify-end gap-2">
+                <button className="px-4 py-2 rounded bg-gray-200" onClick={() => {
+                  setShowMessageModal(false);
+                  setMessageText('');
+                  setMessageSuccess(false);
+                  setMessageError('');
+                }}>بستن</button>
+                <button
+                  className="px-4 py-2 rounded bg-primary text-white disabled:opacity-50"
+                  disabled={!messageText.trim() || sending || messageSuccess}
+                  onClick={async () => {
+                    setSending(true);
+                    setMessageError('');
+                    try {
+                      const { error } = await supabase
+                        .from('messages')
+                        .insert({
+                          ad_id: ad.id.toString(),
+                          sender_id: user.id,
+                          receiver_id: ad.sellerId,
+                          content: messageText.trim(),
+                        });
+                      if (error) {
+                        setMessageError('خطا در ارسال پیام.');
+                      } else {
+                        setMessageSuccess(true);
+                      }
+                    } catch (err) {
+                      setMessageError('خطای غیرمنتظره.');
+                    } finally {
+                      setSending(false);
+                    }
+                  }}
+                >{sending ? 'در حال ارسال...' : 'ارسال'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showChat && (
+          <ChatModule
+            user={user}
+            toast={toast}
+            initialAdId={ad.id.toString()}
+            initialReceiverId={ad.sellerId}
+            onClose={() => setShowChat(false)}
+          />
+        )}
       </main>
       <Navbar />
     </div>

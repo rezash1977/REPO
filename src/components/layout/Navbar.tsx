@@ -5,11 +5,13 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useUnreadMessagesCount } from '@/hooks/useUnreadMessagesCount';
 
 const Navbar: React.FC = () => {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
   const [isAdmin, setIsAdmin] = useState(false);
+  const unreadCount = useUnreadMessagesCount(user?.id);
 
   // Check if user is admin
   useEffect(() => {
@@ -76,8 +78,13 @@ const Navbar: React.FC = () => {
             </div>
           ) : (
             <div className="flex space-x-4 space-x-reverse">
-              <Link to="/account" className="flex flex-col items-center text-gray-600 hover:text-violet-600">
+              <Link to="/account" className="flex flex-col items-center relative text-gray-600 hover:text-violet-600">
                 <User size={24} className="text-fuchsia-600" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-2 bg-red-600 text-white text-xs rounded-full px-1.5 py-0.5">
+                    {unreadCount}
+                  </span>
+                )}
                 <span className="text-xs mt-1">حساب من</span>
               </Link>
               

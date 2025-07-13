@@ -139,7 +139,34 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
+      },
+      messages: {
+        Row: {
+          id: string;
+          ad_id: string;
+          sender_id: string;
+          receiver_id: string;
+          content: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          ad_id: string;
+          sender_id: string;
+          receiver_id: string;
+          content: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          ad_id?: string;
+          sender_id?: string;
+          receiver_id?: string;
+          content?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      },
     }
     Views: {
       [_ in never]: never

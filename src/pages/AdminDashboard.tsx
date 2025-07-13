@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { User, Settings, Users, Database, Archive } from "lucide-react";
+import { User, Settings, Users, Database, Archive, MessageSquare } from "lucide-react";
 import Layout from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -41,6 +41,12 @@ const AdminDashboard: React.FC = () => {
   const [editForm, setEditForm] = useState({ full_name: '', phone: '', city: '' });
 
   const [selectedAds, setSelectedAds] = useState<string[]>([]);
+  const [allConversations, setAllConversations] = useState<any[]>([]);
+  const [adminSelectedChat, setAdminSelectedChat] = useState<{ad_id: string, user1: string, user2: string, adTitle?: string, user1Name?: string, user2Name?: string} | null>(null);
+  const [adminChatMessages, setAdminChatMessages] = useState<any[]>([]);
+  const [adminChatLoading, setAdminChatLoading] = useState(false);
+  const [chatFilter, setChatFilter] = useState('');
+  const [adminUserMap, setAdminUserMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (loading) return;
@@ -112,6 +118,136 @@ const AdminDashboard: React.FC = () => {
 
     fetchStats();
   }, []);
+
+  useEffect(() => {
+    const fetchAllConversations = async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('ad_id, sender_id, receiver_id')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        // استخراج مکالمات یکتا (ad_id + دو کاربر)
+        const convMap = new Map();
+        data.forEach(msg => {
+          // ترتیب user1/user2 را ثابت نگه داریم (کوچک‌تر اول)
+          const users = [msg.sender_id, msg.receiver_id].sort();
+          const key = msg.ad_id + '-' + users[0] + '-' + users[1];
+          if (!convMap.has(key)) {
+            convMap.set(key, {
+              ad_id: msg.ad_id,
+              adTitle: `آگهی ${msg.ad_id}`,
+              user1: users[0],
+              user2: users[1],
+              user1Name: users[0],
+              user2Name: users[1],
+            });
+          }
+        });
+        // حالا اطلاعات کاربران و آگهی‌ها را جداگانه دریافت می‌کنیم
+        const userIds = Array.from(new Set(data.flatMap(msg => [msg.sender_id, msg.receiver_id])));
+        const adIds = Array.from(new Set(data.map(msg => msg.ad_id)));
+        // دریافت اطلاعات کاربران
+        if (userIds.length > 0) {
+          const { data: usersData, error: usersError } = await supabase
+            .from('profiles')
+            .select('id, full_name, nickname')
+            .in('id', userIds);
+          if (usersData && Array.isArray(usersData) && !usersError) {
+            const userMap = new Map(
+              usersData
+                .filter(u => u && typeof u === 'object' && 'id' in u)
+                .map(u => [u.id, (u.nickname || u.full_name || u.id)])
+            );
+            convMap.forEach(conv => {
+              conv.user1Name = userMap.get(conv.user1) || conv.user1;
+              conv.user2Name = userMap.get(conv.user2) || conv.user2;
+            });
+          }
+        }
+        // دریافت اطلاعات آگهی‌ها
+        if (adIds.length > 0) {
+          const { data: adsData, error: adsError } = await supabase
+            .from('ads')
+            .select('id, title')
+            .in('id', adIds);
+          if (adsData && !adsError) {
+            const adMap = new Map(adsData.map(ad => [ad.id, ad.title || `آگهی ${ad.id}`]));
+            convMap.forEach(conv => {
+              conv.adTitle = adMap.get(conv.ad_id) || `آگهی ${conv.ad_id}`;
+            });
+          }
+        }
+        setAllConversations(Array.from(convMap.values()));
+      } else {
+        setAllConversations([]);
+      }
+    };
+    fetchAllConversations();
+  }, []);
+
+  // تابع واکشی پیام‌های چت ادمین (برای استفاده مجدد)
+  const fetchAdminChatMessages = async () => {
+    if (!adminSelectedChat) return;
+    setAdminChatLoading(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('ad_id', adminSelectedChat.ad_id)
+      .in('sender_id', [adminSelectedChat.user1, adminSelectedChat.user2])
+      .in('receiver_id', [adminSelectedChat.user1, adminSelectedChat.user2])
+      .order('created_at', { ascending: true });
+    if (!error && data) {
+      setAdminChatMessages(data);
+      // دریافت نام کاربران این گفتگو
+      const userIds = Array.from(new Set(data.map(msg => msg.sender_id)));
+      if (userIds.length > 0) {
+        const { data: usersData } = await supabase
+          .from('profiles')
+          .select('id, nickname, full_name')
+          .in('id', userIds);
+        if (usersData && Array.isArray(usersData)) {
+          const map: Record<string, string> = {};
+          usersData.forEach((u: any) => {
+            if (u && typeof u === 'object' && 'id' in u) {
+              map[u.id] = u.nickname || u.full_name || u.id;
+            }
+          });
+          setAdminUserMap(map);
+        }
+      }
+    } else {
+      setAdminChatMessages([]);
+      setAdminUserMap({});
+    }
+    setAdminChatLoading(false);
+  };
+
+  useEffect(() => {
+    fetchAdminChatMessages();
+  }, [adminSelectedChat]);
+
+  // اضافه کردن پیام جدید به صورت real-time فقط به انتهای state
+  useEffect(() => {
+    if (!adminSelectedChat) return;
+    const channel = supabase
+      .channel('admin-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        const msg = payload.new;
+        if (
+          msg.ad_id === adminSelectedChat.ad_id &&
+          [adminSelectedChat.user1, adminSelectedChat.user2].includes(msg.sender_id) &&
+          [adminSelectedChat.user1, adminSelectedChat.user2].includes(msg.receiver_id)
+        ) {
+          setAdminChatMessages(prev => {
+            // اگر پیام تکراری نبود اضافه کن
+            if (prev.some(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [adminSelectedChat]);
 
   const handleApproveAd = async (adId: string) => {
     const { error } = await supabase
@@ -246,6 +382,35 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  // حذف یک پیام
+  const handleDeleteMessage = async (messageId: string) => {
+    const confirmed = window.confirm('آیا از حذف این پیام مطمئن هستید؟');
+    if (!confirmed) return;
+    const { error } = await supabase.from('messages').delete().eq('id', messageId);
+    if (!error) {
+      // بعد از حذف موفق، پیام‌ها را مجدداً واکشی کن
+      fetchAdminChatMessages();
+    } else {
+      alert('خطا در حذف پیام: ' + error.message);
+      console.log('Supabase delete error:', error);
+    }
+  };
+  // حذف کل چت
+  const handleDeleteConversation = async () => {
+    if (!adminSelectedChat) return;
+    const confirmed = window.confirm('آیا از حذف کل این گفتگو مطمئن هستید؟');
+    if (!confirmed) return;
+    await supabase
+      .from('messages')
+      .delete()
+      .eq('ad_id', adminSelectedChat.ad_id)
+      .in('sender_id', [adminSelectedChat.user1, adminSelectedChat.user2])
+      .in('receiver_id', [adminSelectedChat.user1, adminSelectedChat.user2]);
+    setAdminChatMessages([]);
+    setAdminSelectedChat(null);
+    setAllConversations(convs => convs.filter(c => !(c.ad_id === adminSelectedChat.ad_id && c.user1 === adminSelectedChat.user1 && c.user2 === adminSelectedChat.user2)));
+  };
+
   if (loading || checking) {
     return <div>در حال بررسی دسترسی...</div>;
   }
@@ -331,6 +496,9 @@ const AdminDashboard: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value="settings" className="flex items-center gap-2">
               <Settings className="h-4 w-4" /> تنظیمات
+            </TabsTrigger>
+            <TabsTrigger value="chats" className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" /> همه چت‌ها
             </TabsTrigger>
           </TabsList>
           
@@ -621,9 +789,9 @@ const AdminDashboard: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium mb-1">تایید خودکار آگهی</label>
-                          <select className="w-full p-2 border rounded-md">
+                          <select className="w-full p-2 border rounded-md" defaultValue="no">
                             <option value="yes">بله</option>
-                            <option value="no" selected>خیر</option>
+                            <option value="no">خیر</option>
                           </select>
                         </div>
                       </div>
@@ -634,6 +802,155 @@ const AdminDashboard: React.FC = () => {
               <CardFooter>
                 <Button>ذخیره تنظیمات</Button>
               </CardFooter>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="chats" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-blue-600" />
+                    <div>
+                      <div className="text-2xl font-bold">{allConversations.length}</div>
+                      <div className="text-sm text-gray-500">کل گفتگوها</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-green-600" />
+                    <div>
+                      <div className="text-2xl font-bold">{users.length}</div>
+                      <div className="text-sm text-gray-500">کاربران فعال</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-5 h-5 text-purple-600" />
+                    <div>
+                      <div className="text-2xl font-bold">{ads.length}</div>
+                      <div className="text-sm text-gray-500">آگهی‌های فعال</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>مدیریت چت‌ها</CardTitle>
+                <CardDescription>مشاهده و مدیریت همه گفتگوهای کاربران</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {adminSelectedChat ? (
+                  <>
+                    <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-4">
+                          <Button variant="outline" onClick={() => setAdminSelectedChat(null)}>
+                            ← بازگشت به لیست گفتگوها
+                          </Button>
+                          <div className="text-sm">
+                            <span className="font-bold text-blue-600">آگهی:</span> {adminSelectedChat.adTitle || `آگهی ${adminSelectedChat.ad_id}`}
+                          </div>
+                        </div>
+                        <Button variant="destructive" onClick={handleDeleteConversation} className="text-xs">
+                          حذف کل گفتگو
+                        </Button>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        <span className="font-bold">کاربران:</span> {adminSelectedChat.user1Name || adminSelectedChat.user1} و {adminSelectedChat.user2Name || adminSelectedChat.user2}
+                      </div>
+                    </div>
+                    {adminChatLoading ? (
+                      <div className="p-4 text-center text-gray-500">در حال بارگذاری پیام‌ها...</div>
+                    ) : (
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {adminChatMessages.length === 0 ? (
+                          <div className="p-4 text-center text-gray-400">پیامی در این گفتگو وجود ندارد.</div>
+                        ) : (
+                          adminChatMessages.map(msg => (
+                            <div key={msg.id} className="p-3 border rounded-lg bg-gray-50">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-sm text-blue-600">
+                                    {adminUserMap[msg.sender_id] || msg.sender_id}
+                                  </span>
+                                  <span className="text-xs text-gray-400">
+                                    {new Date(msg.created_at).toLocaleString('fa-IR')}
+                                  </span>
+                                </div>
+                                <Button 
+                                  size="sm" 
+                                  variant="destructive" 
+                                  onClick={() => handleDeleteMessage(msg.id)}
+                                  className="text-xs"
+                                >
+                                  حذف
+                                </Button>
+                              </div>
+                              <div className="text-sm text-gray-700">{msg.content}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-4">
+                      <input
+                        type="text"
+                        placeholder="جستجو در گفتگوها..."
+                        className="w-full p-2 border rounded-lg"
+                        value={chatFilter}
+                        onChange={(e) => setChatFilter(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      {allConversations.length === 0 ? (
+                        <div className="p-4 text-gray-400 text-center">گفتگویی وجود ندارد.</div>
+                      ) : (
+                        <div className="grid gap-2">
+                          {allConversations
+                            .filter(conv => 
+                              chatFilter === '' || 
+                              (conv.adTitle && conv.adTitle.toLowerCase().includes(chatFilter.toLowerCase())) ||
+                              (conv.user1Name && conv.user1Name.toLowerCase().includes(chatFilter.toLowerCase())) ||
+                              (conv.user2Name && conv.user2Name.toLowerCase().includes(chatFilter.toLowerCase()))
+                            )
+                            .map(conv => (
+                            <div 
+                              key={conv.ad_id + '-' + conv.user1 + '-' + conv.user2} 
+                              className="p-4 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors" 
+                              onClick={() => setAdminSelectedChat(conv)}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="font-medium text-sm text-gray-700 mb-1">
+                                    آگهی: {conv.adTitle || `آگهی ${conv.ad_id}`}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    کاربران: {conv.user1Name || conv.user1} و {conv.user2Name || conv.user2}
+                                  </div>
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  <MessageSquare className="w-4 h-4" />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </CardContent>
             </Card>
           </TabsContent>
         </Tabs>

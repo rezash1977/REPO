@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { Search } from 'lucide-react';
+import SearchBar from '../search/SearchBar';
 
 const Header: React.FC = () => {
   return (
@@ -15,16 +14,7 @@ const Header: React.FC = () => {
           </div>
         </div>
         
-        <div className="relative">
-          <input 
-            type="text" 
-            placeholder="دنبال چی می‌گردی؟" 
-            className="search-bar w-full"
-          />
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-red-500" />
-          </div>
-        </div>
+        <SearchBar />
       </div>
     </header>
   );

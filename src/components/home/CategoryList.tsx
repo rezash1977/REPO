@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { House, Car, Settings, Smartphone, Sofa, Briefcase } from 'lucide-react';
@@ -13,12 +12,12 @@ interface CategoryProps {
 
 const Category: React.FC<CategoryProps> = ({ icon, name, color, link }) => {
   return (
-    <Link to={link} className="w-1/3 px-2 mb-4">
-      <div className="category-card shadow-md hover:shadow-lg" style={{ backgroundColor: color }}>
+    <Link to={link} className="flex flex-col items-center">
+      <div className="category-card-horizontal shadow-md hover:shadow-lg w-20 h-20" style={{ backgroundColor: color }}>
         <div className="text-white">
           {icon}
         </div>
-        <span className="mt-2 text-sm font-bold text-white">{name}</span>
+        <span className="mt-1 text-xs font-bold text-white text-center leading-tight">{name}</span>
       </div>
     </Link>
   );
@@ -26,15 +25,15 @@ const Category: React.FC<CategoryProps> = ({ icon, name, color, link }) => {
 
 const getIconForCategory = (iconName: string) => {
   const iconMap: { [key: string]: React.ReactNode } = {
-    home: <House size={28} />,
-    car: <Car size={28} />,
-    wrench: <Settings size={28} />,
-    smartphone: <Smartphone size={28} />,
-    sofa: <Sofa size={28} />,
-    briefcase: <Briefcase size={28} />,
+    home: <House size={20} />,
+    car: <Car size={20} />,
+    wrench: <Settings size={20} />,
+    smartphone: <Smartphone size={20} />,
+    sofa: <Sofa size={20} />,
+    briefcase: <Briefcase size={20} />,
   };
   
-  return iconMap[iconName] || <House size={28} />;
+  return iconMap[iconName] || <House size={20} />;
 };
 
 const CategoryList: React.FC = () => {
@@ -55,16 +54,13 @@ const CategoryList: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="font-bold text-lg">دسته‌بندی‌ها</h2>
-        </div>
-        <div className="flex flex-wrap -mx-2">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="w-1/3 px-2 mb-4">
-              <div className="h-20 bg-gray-200 rounded-lg animate-pulse"></div>
-            </div>
-          ))}
+      <div className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-100 py-3 mb-4">
+        <div className="container mx-auto px-4">
+          <div className="flex overflow-x-auto scrollbar-hide space-x-3 pb-2">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="flex-shrink-0 w-20 h-20 bg-gray-200 rounded-lg animate-pulse"></div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -73,13 +69,11 @@ const CategoryList: React.FC = () => {
   if (error) {
     console.error('Error loading categories:', error);
     return (
-      <div className="container mx-auto px-4 mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="font-bold text-lg">دسته‌بندی‌ها</h2>
-        </div>
-        <div className="text-center py-8">
-          <p className="text-red-500 mb-2">خطا در بارگذاری دسته‌بندی‌ها</p>
-          <p className="text-gray-500 text-sm">لطفاً بعداً تلاش کنید</p>
+      <div className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-100 py-3 mb-4">
+        <div className="container mx-auto px-4">
+          <div className="text-center py-4">
+            <p className="text-red-500 text-sm">خطا در بارگذاری دسته‌بندی‌ها</p>
+          </div>
         </div>
       </div>
     );
@@ -87,34 +81,30 @@ const CategoryList: React.FC = () => {
 
   if (!categories || categories.length === 0) {
     return (
-      <div className="container mx-auto px-4 mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="font-bold text-lg">دسته‌بندی‌ها</h2>
-        </div>
-        <div className="text-center py-8">
-          <p className="text-gray-500">هیچ دسته‌بندی‌ای یافت نشد</p>
+      <div className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-100 py-3 mb-4">
+        <div className="container mx-auto px-4">
+          <div className="text-center py-4">
+            <p className="text-gray-500 text-sm">هیچ دسته‌بندی‌ای یافت نشد</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 mb-8">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="font-bold text-lg">دسته‌بندی‌ها</h2>
-        <Link to="/categories" className="text-primary text-sm">مشاهده همه</Link>
-      </div>
-      
-      <div className="flex flex-wrap -mx-2">
-        {categories.map((category) => (
-          <Category
-            key={category.id}
-            icon={getIconForCategory(category.icon)}
-            name={category.name}
-            color={getVibrantColor(category.slug)}
-            link={`/category/${category.slug}`}
-          />
-        ))}
+    <div className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-100 py-3 mb-4">
+      <div className="container mx-auto px-4">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 pb-2">
+          {categories.map((category) => (
+            <Category
+              key={category.id}
+              icon={getIconForCategory(category.icon)}
+              name={category.name}
+              color={getVibrantColor(category.slug)}
+              link={`/category/${category.slug}`}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

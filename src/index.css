@@ -106,7 +106,47 @@
     @apply rounded-xl flex flex-col items-center justify-center p-4 transition-transform hover:scale-105;
   }
   
+  .category-card-horizontal {
+    @apply rounded-xl flex flex-col items-center justify-center p-2 transition-transform hover:scale-105;
+  }
+  
   .search-bar {
     @apply w-full max-w-lg px-4 py-3 rounded-full bg-secondary border border-border shadow-sm focus:outline-none focus:ring-2 focus:ring-primary;
+  }
+}
+
+/* Scrollbar hiding utilities */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Line clamp utilities */
+@layer utilities {
+  .line-clamp-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+  
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  
+  .line-clamp-3 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
   }
 }

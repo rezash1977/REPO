@@ -17,6 +17,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import MyAdsPage from "./pages/MyAdsPage";
 import FavoritesPage from "./pages/FavoritesPage";
+import SearchPage from "./pages/SearchPage";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 // Create a QueryClient outside of the component to ensure it doesn't get recreated on every render
@@ -32,6 +33,7 @@ const App = () => {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Index />} />
+              <Route path="/search" element={<SearchPage />} />
               <Route path="/category/:categoryId" element={<CategoryPage />} />
               <Route path="/ad/:adId" element={<AdDetailPage />} />
               <Route path="/account" element={<AccountPage />} />
