@@ -17,6 +17,17 @@ import Layout from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -39,6 +50,14 @@ const AdminDashboard: React.FC = () => {
 
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ full_name: '', phone: '', city: '' });
+  const [isAddTeacherDialogOpen, setIsAddTeacherDialogOpen] = useState(false);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [addTeacherForm, setAddTeacherForm] = useState({
+    fullName: "",
+    phone: "",
+    city: "",
+    password: "",
+  });
 
   const [selectedAds, setSelectedAds] = useState<string[]>([]);
   const [allConversations, setAllConversations] = useState<any[]>([]);
@@ -65,6 +84,45 @@ const AdminDashboard: React.FC = () => {
         setIsAdmin(!!data && !error);
         setChecking(false);
       });
+
+    const fetchTeachers = async () => {
+      const { data: teacherRoles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "teacher");
+
+      if (rolesError) {
+        toast({
+          title: "خطا در واکشی معلمان",
+          description: rolesError.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (teacherRoles) {
+        const teacherIds = teacherRoles.map((role) => role.user_id);
+        const { data: teacherProfiles, error: profilesError } = await supabase
+          .from("profiles")
+          .select("*")
+          .in("id", teacherIds);
+
+        if (profilesError) {
+          toast({
+            title: "خطا در واکشی پروفایل معلمان",
+            description: profilesError.message,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (teacherProfiles) {
+          setTeachers(teacherProfiles);
+        }
+      }
+    };
+
+    fetchTeachers();
   }, [user, loading]);
 
   useEffect(() => {
@@ -396,9 +454,64 @@ const AdminDashboard: React.FC = () => {
     }
   };
   // حذف کل چت
+  const handleAddTeacher = async () => {
+    const {
+      data: { user: newUser },
+      error: signUpError,
+    } = await supabase.auth.signUp({
+      email: `${addTeacherForm.phone}@example.com`,
+      password: addTeacherForm.password,
+      options: {
+        data: {
+          full_name: addTeacherForm.fullName,
+          phone: addTeacherForm.phone,
+          city: addTeacherForm.city,
+        },
+      },
+    });
+
+    if (signUpError) {
+      toast({
+        title: "خطا در ایجاد معلم",
+        description: signUpError.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newUser) {
+      const { error: roleError } = await supabase
+        .from("user_roles")
+        .insert({ user_id: newUser.id, role: "teacher" });
+
+      if (roleError) {
+        toast({
+          title: "خطا در تعیین نقش معلم",
+          description: roleError.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setUsers((prev) => [
+        ...prev,
+        {
+          id: newUser.id,
+          full_name: addTeacherForm.fullName,
+          phone: addTeacherForm.phone,
+          city: addTeacherForm.city,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      toast({ title: "معلم با موفقیت اضافه شد" });
+      setIsAddTeacherDialogOpen(false);
+      setAddTeacherForm({ fullName: "", phone: "", city: "", password: "" });
+    }
+  };
+
   const handleDeleteConversation = async () => {
     if (!adminSelectedChat) return;
-    const confirmed = window.confirm('آیا از حذف کل این گفتگو مطمئن هستید؟');
+    const confirmed = window.confirm("آیا از حذف کل این گفتگو مطمئن هستید؟");
     if (!confirmed) return;
     await supabase
       .from('messages')
@@ -491,6 +604,9 @@ const AdminDashboard: React.FC = () => {
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="h-4 w-4" /> کاربران
             </TabsTrigger>
+            <TabsTrigger value="teachers" className="flex items-center gap-2">
+              <Users className="h-4 w-4" /> معلمان
+            </TabsTrigger>
             <TabsTrigger value="ads" className="flex items-center gap-2">
               <Archive className="h-4 w-4" /> آگهی‌ها
             </TabsTrigger>
@@ -572,11 +688,82 @@ const AdminDashboard: React.FC = () => {
                 )}
               </CardContent>
               <CardFooter className="flex justify-between">
-                <Button variant="outline">کاربر جدید</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsAddTeacherDialogOpen(true)}
+                >
+                  کاربر جدید
+                </Button>
                 <div className="flex items-center text-sm">
                   نمایش 1-{users.length} از {stats.totalUsers} کاربر
                 </div>
               </CardFooter>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="teachers" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>مدیریت معلمان</CardTitle>
+                <CardDescription>
+                  مشاهده و مدیریت معلمان سایت
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableCaption>لیست معلمان سایت</TableCaption>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>شناسه</TableHead>
+                      <TableHead>نام کامل</TableHead>
+                      <TableHead>شماره تماس</TableHead>
+                      <TableHead>شهر</TableHead>
+                      <TableHead>تاریخ ساخت</TableHead>
+                      <TableHead>تاریخ ویرایش</TableHead>
+                      <TableHead>عملیات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {teachers.map((teacher) => (
+                      <TableRow key={teacher.id}>
+                        <TableCell>{teacher.id}</TableCell>
+                        <TableCell>{teacher.full_name}</TableCell>
+                        <TableCell>{teacher.phone}</TableCell>
+                        <TableCell>{teacher.city}</TableCell>
+                        <TableCell>
+                          {teacher.created_at
+                            ? new Date(teacher.created_at).toLocaleString("fa-IR")
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          {teacher.updated_at
+                            ? new Date(teacher.updated_at).toLocaleString("fa-IR")
+                            : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => startEditUser(teacher)}
+                            >
+                              ویرایش
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-500 hover:text-red-700"
+                              onClick={() => handleDeleteUser(teacher.id)}
+                            >
+                              حذف
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
             </Card>
           </TabsContent>
           
@@ -955,6 +1142,82 @@ const AdminDashboard: React.FC = () => {
           </TabsContent>
         </Tabs>
       </div>
+      <Dialog
+        open={isAddTeacherDialogOpen}
+        onOpenChange={setIsAddTeacherDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>افزودن معلم</DialogTitle>
+            <DialogDescription>
+              برای افزودن معلم جدید، اطلاعات زیر را وارد کنید.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="fullName" className="text-right">
+                نام کامل
+              </Label>
+              <Input
+                id="fullName"
+                value={addTeacherForm.fullName}
+                onChange={(e) =>
+                  setAddTeacherForm({ ...addTeacherForm, fullName: e.target.value })
+                }
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="phone" className="text-right">
+                تلفن
+              </Label>
+              <Input
+                id="phone"
+                value={addTeacherForm.phone}
+                onChange={(e) =>
+                  setAddTeacherForm({ ...addTeacherForm, phone: e.target.value })
+                }
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="city" className="text-right">
+                شهر
+              </Label>
+              <Input
+                id="city"
+                value={addTeacherForm.city}
+                onChange={(e) =>
+                  setAddTeacherForm({ ...addTeacherForm, city: e.target.value })
+                }
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="password-dialog" className="text-right">
+                رمز عبور
+              </Label>
+              <Input
+                id="password-dialog"
+                type="password"
+                value={addTeacherForm.password}
+                onChange={(e) =>
+                  setAddTeacherForm({
+                    ...addTeacherForm,
+                    password: e.target.value,
+                  })
+                }
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="submit" onClick={handleAddTeacher}>
+              افزودن
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 };
